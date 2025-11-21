@@ -1,1 +1,1 @@
-# Run-for-run25
+uvicorn app:app --reload

@@ -1,0 +1,7 @@
+langchain
+langchain-community
+langchain-core
+langchain-openai  # Optional, if you want to use OpenAI embeddings
+faiss-cpu         # For the FAISS vector store (use faiss-gpu if you have CUDA)
+sentence-transformers # For the HuggingFace embeddings
+numpy
