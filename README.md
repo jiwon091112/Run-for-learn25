@@ -1,2 +1,1 @@
-txt file -> vector DB -> 검색
-
+uvicorn app:app --reload
