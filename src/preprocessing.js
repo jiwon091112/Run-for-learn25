@@ -5,7 +5,7 @@
 
 const fs = require('fs/promises');
 const cheerio = require('cheerio');
-const outPath = './factcheck_more_page1.json';
+const outPath = '../asset/factcheck_more_page1.json';
 fs.writeFile(outPath, JSON.stringify([], null, 2), 'utf8');
 (async () => {
   try {

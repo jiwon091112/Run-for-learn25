@@ -6,7 +6,7 @@
 const fs = require('fs/promises');
 const cheerio = require('cheerio');
 
-const outPath = './factcheck_all_pages.json';
+const outPath = '../asset/factcheck_all_pages.json';
 
 function extractKorean(s) {
   if (!s) return '';
