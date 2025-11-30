@@ -78,19 +78,6 @@ def create_langchain_documents(articles):
     print(f"Created {len(docs)} LangChain Document objects.")
     return docs
 
-def split_documents(docs):
-    """
-    Splits the documents into smaller chunks for better embedding and retrieval.
-    """
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,  # Max size of each chunk
-        chunk_overlap=200,  # Overlap between chunks to maintain context
-        length_function=len
-    )
-    chunks = text_splitter.split_documents(docs)
-    print(f"Split {len(docs)} documents into {len(chunks)} text chunks.")
-    return chunks
-
 def get_embedding_model():
     """
     Initializes and returns the embedding model.
@@ -109,6 +96,21 @@ def get_embedding_model():
     
     return embeddings
 
+
+def split_documents(docs):
+    """
+    Splits the documents into smaller chunks for better embedding and retrieval.
+    """
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,  # Max size of each chunk
+        chunk_overlap=200,  # Overlap between chunks to maintain context
+        length_function=len
+    )
+    chunks = text_splitter.split_documents(docs)
+    print(f"Split {len(docs)} documents into {len(chunks)} text chunks.")
+    return chunks
+
+
 def create_and_save_vector_store(chunks, embeddings, db_path):
     """
     Creates the FAISS vector store from chunks and saves it locally.
@@ -122,46 +124,6 @@ def create_and_save_vector_store(chunks, embeddings, db_path):
     vector_store.save_local(db_path)
     print("Vector store saved successfully.")
     return vector_store
-
-def test_vector_store(db_path, embeddings):
-    """
-    Loads the saved vector store and performs a test similarity search.
-    """
-    print("\n--- Testing Vector DB ---")
-    if not os.path.exists(db_path):
-        print(f"Error: Database path '{db_path}' not found.")
-        return
-
-    # Load the local vector store
-    # allow_dangerous_deserialization is needed for FAISS (which uses pickle)
-    try:
-        db = FAISS.load_local(
-            db_path, 
-            embeddings, 
-            allow_dangerous_deserialization=True
-        )
-        print("Vector store loaded from disk.")
-    except Exception as e:
-        print(f"Error loading vector store: {e}")
-        print("Did you forget to install 'faiss-cpu'?")
-        return
-
-    # Perform a similarity search
-    query = "중국인 건강보험 적자"
-    print(f"Performing similarity search for: '{query}'")
-    results = db.similarity_search(query, k=2) # Get top 2 results
-    
-    if not results:
-        print("No results found.")
-        return
-
-    for i, doc in enumerate(results):
-        print(f"\n--- Result {i+1} ---")
-        print(f"Source (URL): {doc.metadata.get('url')}")
-        print(f"Title: {doc.metadata.get('title')}")
-        print(f"Match Score (Distance): {doc.metadata.get('_distance', 'N/A')}") # If using search_with_score
-        print(f"Snippet: {doc.page_content[:250]}...")
-        print("---------------------")
 
 def main():
     # 1. Load Data
