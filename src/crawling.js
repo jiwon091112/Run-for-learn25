@@ -1,119 +1,140 @@
 /**
- * data crawling news body from naver news factcheck
+ * Fast Naver Factcheck Crawler (Parallel Processing)
  */
-
-// ...existing code...
+require('dotenv').config();
 const fs = require('fs/promises');
 const cheerio = require('cheerio');
+const OpenAI = require('openai');
 
-const outPath = '../asset/factcheck_all_pages.json';
-
-function extractKorean(s) {
-  if (!s) return '';
-  // 한글(가-힣) 및 공백만 남기고 제거, 연속 공백은 하나로 정리
-  const parts = s.match(/[가-힣\s]+/g);
-  if (!parts) return '';
-  return parts.join(' ').replace(/\s+/g, ' ').trim();
+if (!process.env.OPENAI_API_KEY) {
+  console.error('Error: .env 파일에 OPENAI_API_KEY가 없습니다.');
+  process.exit(1);
 }
-function clearText(s) {
 
-  let processedText = s;
+const CONFIG = {
+  apiKey: process.env.OPENAI_API_KEY,
+  model: 'gpt-4o-mini', 
+  startPage: 1,
+  endPage: 6,
+  outPath: 'asset/factcheck_ai_summary.txt',
+  batchSize: 15, // ★ 핵심: 한 번에 동시에 처리할 기사 수 (너무 높으면 차단 위험)
+};
 
-  //processedText = processedText.replace(/<[^>]*>/g, '');
+const openai = new OpenAI({ apiKey: CONFIG.apiKey });
 
-  //processedText = processedText.replace(/&#\d+;|&nbsp;/g, ' ');
+function cleanText(text) {
+  if (!text) return '';
+  return text.replace(/[\n\r\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
+async function summarizeArticle(title, content) {
+  try {
+    const prompt = `
+    다음 뉴스 기사의 '주요 쟁점'과 '팩트체크 결과'를 핵심만 한 문단으로 요약해.
+    [제약] 한글 작성, 줄바꿈 금지, 괄호() 사용 금지, 서두 생략.
+    [제목] ${title}
+    [본문] ${content.substring(0, 2500)}`; // 토큰 절약을 위해 길이 제한
 
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: CONFIG.model,
+    });
+    return completion.choices[0].message.content;
+  } catch (error) {
+    console.error(`  X [AI Error] ${title.substring(0, 10)}... : ${error.message}`);
+    return null;
+  }
+}
 
-  processedText = processedText
-  .trim() 
-  .split('\n') 
-  .map(line => line.trim()) 
-  .filter(line => line.length > 0) 
-  .join('\n') 
-  .replace(/ +/g, ' '); 
-  console.log(processedText,'\n')
-  return processedText
+// 개별 기사 처리 함수 (병렬 실행용)
+async function processArticle(url, title, press, seenSet) {
+  if (!url || seenSet.has(url)) return;
+  seenSet.add(url);
+
+  try {
+    // 1. 본문 가져오기
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) return;
+    
+    const html = await res.text();
+    const $ = cheerio.load(html);
+    const $dic = $('#dic_area');
+    $dic.find('script, style, iframe, button, img').remove();
+    const bodyText = cleanText($dic.text());
+
+    if (bodyText.length < 50) return;
+
+    // 2. AI 요약 요청 (병렬로 실행됨)
+    // console.log(`  > Processing: ${title.substring(0, 15)}...`);
+    const summary = await summarizeArticle(title, bodyText);
+
+    if (summary) {
+      const cleanSummary = cleanText(summary).replace(/[()]/g, '');
+      const shortUrl = url.replace('https://n.news.naver.com/article/', '');
+      const line = `[${press}][${shortUrl}] ${cleanSummary}\n`;
+      
+      // 3. 결과 저장 (비동기 append)
+      await fs.appendFile(CONFIG.outPath, line, 'utf8');
+      process.stdout.write('.'); // 진행상황 점으로 표시
+    }
+  } catch (e) {
+    console.error(`Error processing ${url}:`, e.message);
+  }
 }
 
 (async () => {
   try {
-    const allCards = [];
+    await fs.writeFile(CONFIG.outPath, '', 'utf8');
+    console.log(`[Start] Fast Crawling (Batch Size: ${CONFIG.batchSize})`);
+    
     const seen = new Set();
+    const startTime = Date.now();
 
-    for (let i = 1; i <= 1; i++) {
+    for (let i = CONFIG.startPage; i <= CONFIG.endPage; i++) {
       const listUrl = `https://news.naver.com/factcheck/more?oid=&page=${i}`;
+      console.log(`\n[Page ${i}] Fetching list...`);
+      
       const res = await fetch(listUrl, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
+        headers: { 'User-Agent': 'Mozilla/5.0' },
       });
-      if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
+      if (!res.ok) continue;
 
       const html = await res.text();
-      await fs.writeFile(`./naver_factcheck_more_page${i}.html`, html, 'utf8');
-
       const $ = cheerio.load(html);
-      const cardEls = $('li.factcheck_card').toArray();
+      const cards = $('li.factcheck_card').toArray();
 
-      for (const el of cardEls) {
+      // --- 병렬 처리 로직 시작 ---
+      const tasks = [];
+      
+      for (const el of cards) {
         const $el = $(el);
         const $link = $el.find('a.factcheck_card_link');
         let articleUrl = $link.attr('href') || '';
+        
         if (articleUrl && !/^https?:\/\//i.test(articleUrl)) {
           articleUrl = new URL(articleUrl, 'https://news.naver.com').toString();
         }
 
-        if (seen.has(articleUrl)) continue;
-        seen.add(articleUrl);
+        const title = cleanText($link.find('.factcheck_card_title').text());
+        const press = cleanText($link.find('.factcheck_card_sub_info .factcheck_card_sub_item').eq(0).text());
 
-        const title = $link.find('.factcheck_card_title').text().trim() || '';
-        const desc = $link.find('.factcheck_card_desc').text().trim() || '';
-        const subItems = $link.find('.factcheck_card_sub_info .factcheck_card_sub_item');
-        const press = subItems.eq(0).text().trim() || '';
-        const time = subItems.eq(1).text().trim() || '';
-        const img = $link.find('.factcheck_card_img img').attr('src') || '';
-
-        // 개별 기사에서 #dic_area 추출 -> 태그 제거 후 한글만 남김
-        let dic_area = '';
-        if (articleUrl) {
-          try {
-            const ares = await fetch(articleUrl, {
-              headers: {
-                'User-Agent':
-                  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              },
-            });
-            if (ares.ok) {
-              const ahtml = await ares.text();
-              const $a = cheerio.load(ahtml);
-              const $dic = $a('#dic_area');
-
-              const rawText = $dic.length ? $dic.text() : '';
-              dic_area = clearText(rawText);
-
-            } else {
-              console.warn(`Article fetch failed: ${articleUrl} -> ${ares.status}`);
-            }
-          } catch (e) {
-            console.warn(`Article fetch error for ${articleUrl}: ${e.message}`);
-          }
-        }
-
-        allCards.push({ url: articleUrl, title, desc, press, time, img, dic_area });
+        // 작업을 배열에 담음 (아직 실행 X)
+        tasks.push(() => processArticle(articleUrl, title, press, seen));
       }
 
-      console.log(`page ${i} processed, total collected: ${allCards.length}`);
+      // 배치 단위로 실행 (예: 5개씩 끊어서 동시 실행)
+      for (let j = 0; j < tasks.length; j += CONFIG.batchSize) {
+        const batch = tasks.slice(j, j + CONFIG.batchSize);
+        // Promise.all로 묶어서 동시 발사
+        await Promise.all(batch.map(task => task())); 
+      }
+      // --- 병렬 처리 로직 끝 ---
     }
 
-    await fs.writeFile(outPath, JSON.stringify(allCards, null, 2), 'utf8');
-    console.log(`Saved merged JSON: ${outPath} (total: ${allCards.length})`);
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`\n[Done] Completed in ${duration}s. Saved to ${CONFIG.outPath}`);
+
   } catch (err) {
-    console.error('Error:', err);
-    process.exit(1);
+    console.error(err);
   }
 })();
-// ...existing code...

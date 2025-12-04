@@ -32,8 +32,17 @@
         const currentUrl = window.location.href;
         console.log("[FactCheck] Requesting analysis for:", currentUrl);
 
+        // Loading UI 생성 및 삽입
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'factcheck-loading';
+        loadingDiv.innerHTML = '🤖 팩트체크 AI가 기사를 분석 중입니다...';
+        titleElement.after(loadingDiv);
+
         // API 서버에 현재 URL을 보내서 분석 요청
         const response = await fetch(`${API_BASE_URL}/check-facts?url=${encodeURIComponent(currentUrl)}`);
+        
+        // 로딩 제거
+        loadingDiv.remove();
         
         console.log("[FactCheck] Response status:", response.status);
 
@@ -79,7 +88,8 @@ function renderResult(container, data) {
         const judgment = item.verification?.judgment || '판단 불가';
         if (judgment.includes('거짓')) {
             fakeItems.push(item);
-        } else {
+        } else if (!judgment.includes('판단 불가')) {
+            // 판단 불가인 항목은 제외하고, 사실인 경우만 추가
             otherItems.push(item);
         }
     });
@@ -160,7 +170,7 @@ function createItemHtml(item, type) {
         item.related_facts.forEach(fact => {
             const meta = fact.metadata || {};
             const press = meta.press || '언론사 정보 없음';
-            const url = meta.url || '#';
+            const url = meta.source || '#';
             // 제목이 없으면 내용의 앞부분을 사용
             const title = meta.title || (fact.content ? fact.content.substring(0, 30) + '...' : '제목 없음');
             

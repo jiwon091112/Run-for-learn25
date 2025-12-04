@@ -160,13 +160,14 @@ async def extract_claims_async(text: str):
         return []
 
     system_prompt = """당신은 팩트체크를 위한 뉴스 분석가입니다. 
-주어진 텍스트에서 '검증 가능한 핵심 주장(Claim)'을 3개 추출하세요.
+주어진 텍스트에서 주장하는 내용을 찾고 그것이 사실인지 재확인하는것이 목표입니다.
+글에서 '검증 가능한 핵심 주장(Claim)'을 4개 추출하세요.
+주장은 주어진글을 대표하는 문장이여야합니다.
 
 [출력 형식 - JSON Only]
 [
   {{
     "claim": "주장 내용 (한 문장)",
-    "type": "Fact" 또는 "Opinion",
     "query": "검색용 쿼리 (핵심 키워드 위주)"
   }}
 ]
@@ -205,6 +206,7 @@ async def verify_claim_with_llm(claim: str, related_docs: list):
 사용자의 '주장(Claim)'과 이를 검증할 수 있는 '팩트체크 기사들(Context)'이 주어집니다.
 기사 내용을 바탕으로 주장이 '사실', '거짓', '판단 불가' 중 무엇인지 판별하고, 
 만약 '거짓'이라면 기사의 내용을 인용하여 왜 틀렸는지 구체적으로 반박하세요.
+위 기사의 내용에서 완전히 틀린 내용만 지적 가능하지, 단순히 기사에 언급되지 않았다는것만으로는 틀렸다고 판단할 수 없습니다.
 
 [출력 형식 - JSON]
 {{
@@ -235,14 +237,17 @@ async def process_single_claim(claim: Dict[str, str], db: Any) -> Optional[Dict[
     if not query: 
         return None
 
-    # 1. DB 검색 (동기 함수이므로 별도 스레드에서 실행 고려 가능하나, FAISS가 빠르면 그냥 실행)
-    # LangChain FAISS wrapper는 동기 함수임.
-    docs_with_scores = db.similarity_search_with_score(query, k=2)
+    # 1. DB 검색 (Blocking 연산이므로 ThreadPool에서 실행하여 이벤트 루프 차단 방지)
+    loop = asyncio.get_running_loop()
+    docs_with_scores = await loop.run_in_executor(
+        None, 
+        lambda: db.similarity_search_with_score(query, k=2)
+    )
     
     search_hits = []
     for doc, score in docs_with_scores:
-        # 거리(Distance) 기반 필터링
-        if score > 1.2: 
+        # 거리(Distance) 기반 필터링 (1.3 이내만 표시)
+        if score > 1.1: 
             continue
 
         search_hits.append({
@@ -252,7 +257,11 @@ async def process_single_claim(claim: Dict[str, str], db: Any) -> Optional[Dict[
         })
     
     # 2. LLM 검증 (비동기)
-    verification = await verify_claim_with_llm(claim.get('claim'), search_hits)
+    # 검색 결과가 없으면 LLM 호출 자체를 생략 (속도 향상)
+    if not search_hits:
+        verification = {"judgment": "판단 불가", "reason": "관련된 팩트체크 기사가 없습니다.", "reference_index": []}
+    else:
+        verification = await verify_claim_with_llm(claim.get('claim'), search_hits)
     
     return {
         "claim": claim.get('claim'),

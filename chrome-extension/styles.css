@@ -177,3 +177,22 @@
     text-decoration: underline;
     color: #03c75a;
 }
+
+/* 로딩 표시 */
+.factcheck-loading {
+    padding: 20px;
+    text-align: center;
+    background: #f9f9f9;
+    border-radius: 8px;
+    margin: 20px 0;
+    font-weight: bold;
+    color: #666;
+    border: 1px solid #eee;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
