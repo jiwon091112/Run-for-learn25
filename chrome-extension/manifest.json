@@ -1,0 +1,35 @@
+{
+    "manifest_version": 3,
+    "name": "Naver News FactChecker",
+    "version": "1.0",
+    "description": "네이버 뉴스 기사를 자동으로 팩트체크하여 결과를 보여줍니다.",
+    "permissions": [
+        "storage"
+    ],
+    "options_ui": {
+        "page": "options.html",
+        "open_in_tab": false
+    },
+    "host_permissions": [
+        "http://localhost:8000/*",
+        "http://127.0.0.1:8000/*",
+        "http://*/*",
+        "https://github.dev/*",
+        "https://*/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "https://n.news.naver.com/article/*",
+                "https://n.news.naver.com/mnews/article/*",
+                "https://news.naver.com/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "css": [
+                "styles.css"
+            ]
+        }
+    ]
+}

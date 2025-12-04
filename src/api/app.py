@@ -1,5 +1,6 @@
 import os
 import httpx # requests 대신 사용하는 비동기 라이브러리 (pip install httpx)
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware # CORS 미들웨어
@@ -13,7 +14,7 @@ from langchain_community.vectorstores import FAISS
 # from langchain_community.embeddings import HuggingFaceEmbeddings # 로컬 모델 사용 시 주석 해제
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings # OpenAI 사용 시
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 
 # --- .env 로드 ---
 load_dotenv()
@@ -21,7 +22,8 @@ load_dotenv()
 # --- 1. 설정 ---
 # ★ 중요: DB 만들 때 쓴 모델과 똑같은 걸 써야 합니다!
 # DB_FAISS_PATH = "faiss_index"         # 로컬 모델(KURE)로 만든 DB 경로
-DB_FAISS_PATH = "faiss_index_openai"  # OpenAI로 만든 DB 경로
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_FAISS_PATH = os.path.join(BASE_DIR, "faiss_index_openai")  # 절대 경로로 변경
 USE_OPENAI_EMBEDDING = True           # True면 OpenAI, False면 KURE(로컬)
 
 # 전역 변수 (DB, Embeddings, LLM)
@@ -84,7 +86,12 @@ app = FastAPI(
 # CORS 설정 (프론트엔드 연동 필수)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # 보안상 실제 운영 시에는 ["http://localhost:3000"] 등으로 제한 권장
+    allow_origins=[
+        "*", # 개발 편의를 위해 유지하되, 아래에 명시적 출처 추가
+        "https://n.news.naver.com",
+        "https://news.naver.com",
+        "https://m.news.naver.com",
+    ], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -157,11 +164,11 @@ async def extract_claims_async(text: str):
 
 [출력 형식 - JSON Only]
 [
-  {
+  {{
     "claim": "주장 내용 (한 문장)",
     "type": "Fact" 또는 "Opinion",
     "query": "검색용 쿼리 (핵심 키워드 위주)"
-  }
+  }}
 ]
 """
     prompt = ChatPromptTemplate.from_messages([
@@ -181,6 +188,78 @@ async def extract_claims_async(text: str):
     except Exception as e:
         print(f"클레임 추출 오류: {e}")
         return []
+
+async def verify_claim_with_llm(claim: str, related_docs: list):
+    """
+    주장과 검색된 팩트체크 기사를 비교하여 진위 여부를 판단
+    """
+    if not related_docs:
+        return {"judgment": "판단 불가", "reason": "관련된 팩트체크 기사가 없습니다.", "reference_index": []}
+
+    # 검색된 기사 내용 합치기
+    context = ""
+    for i, doc in enumerate(related_docs):
+        context += f"[기사 {i+1}] (출처: {doc['metadata'].get('press')})\n{doc['content']}\n\n"
+
+    system_prompt = """당신은 팩트체크 검증 AI입니다. 
+사용자의 '주장(Claim)'과 이를 검증할 수 있는 '팩트체크 기사들(Context)'이 주어집니다.
+기사 내용을 바탕으로 주장이 '사실', '거짓', '판단 불가' 중 무엇인지 판별하고, 
+만약 '거짓'이라면 기사의 내용을 인용하여 왜 틀렸는지 구체적으로 반박하세요.
+
+[출력 형식 - JSON]
+{{
+    "judgment": "사실" | "거짓" | "판단 불가",
+    "reason": "판단 이유 및 반박 내용 (3문장 이내)",
+    "reference_index": [참고한 기사 번호 (예: 1, 2)]
+}}
+"""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "주장: {claim}\n\n팩트체크 기사들:\n{context}")
+    ])
+    
+    llm = resources.get('llm')
+    chain = prompt | llm | JsonOutputParser()
+    
+    try:
+        return await chain.ainvoke({"claim": claim, "context": context})
+    except Exception as e:
+        print(f"검증 오류: {e}")
+        return {"judgment": "오류", "reason": "검증 중 오류가 발생했습니다.", "reference_index": []}
+
+async def process_single_claim(claim: Dict[str, str], db: Any) -> Optional[Dict[str, Any]]:
+    """
+    개별 주장에 대한 검색 및 검증을 수행하는 비동기 함수
+    """
+    query = claim.get('query')
+    if not query: 
+        return None
+
+    # 1. DB 검색 (동기 함수이므로 별도 스레드에서 실행 고려 가능하나, FAISS가 빠르면 그냥 실행)
+    # LangChain FAISS wrapper는 동기 함수임.
+    docs_with_scores = db.similarity_search_with_score(query, k=2)
+    
+    search_hits = []
+    for doc, score in docs_with_scores:
+        # 거리(Distance) 기반 필터링
+        if score > 1.2: 
+            continue
+
+        search_hits.append({
+            "content": doc.page_content,
+            "metadata": doc.metadata,
+            "score": float(score)
+        })
+    
+    # 2. LLM 검증 (비동기)
+    verification = await verify_claim_with_llm(claim.get('claim'), search_hits)
+    
+    return {
+        "claim": claim.get('claim'),
+        "query": query,
+        "related_facts": search_hits,
+        "verification": verification
+    }
 
 # --- 6. 엔드포인트 ---
 
@@ -204,38 +283,13 @@ async def check_facts_by_url(url: str):
         # 주장이 안 뽑혔을 경우 빈 결과 반환 대신 에러 처리 선택 가능
         return FactCheckResponse(original_claims=[], related_factchecks=[])
 
-    # 3. DB 검색
-    related_results = []
+    # 3. DB 검색 및 검증 (병렬 처리)
+    # 각 주장에 대해 process_single_claim을 동시에 실행
+    tasks = [process_single_claim(claim, db) for claim in claims]
+    results = await asyncio.gather(*tasks)
     
-    for claim in claims:
-        query = claim.get('query')
-        if not query: continue
-
-        # k=2, 유사도 검색
-        docs_with_scores = db.similarity_search_with_score(query, k=2)
-        
-        search_hits = []
-        for doc, score in docs_with_scores:
-            # 거리(Distance) 기반 필터링
-            # OpenAI Embeddings + FAISS(L2)의 경우:
-            # 0.0 = 완전 일치, 1.0 이상 = 관련 없음
-            # 보통 0.5 ~ 0.7 사이를 임계값으로 잡음 (데이터에 따라 다름)
-            
-            # 너무 먼 결과 제외 (임계값 조정 필요)
-            if score > 1.2: 
-                continue
-
-            search_hits.append({
-                "content": doc.page_content,
-                "metadata": doc.metadata,
-                "score": float(score)
-            })
-        
-        related_results.append({
-            "claim": claim.get('claim'),
-            "query": query,
-            "related_facts": search_hits
-        })
+    # None 결과 필터링
+    related_results = [res for res in results if res is not None]
 
     return FactCheckResponse(
         original_claims=claims,
