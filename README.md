@@ -1,17 +1,4 @@
-# Run-for-learn25
-- https://news.naver.com/factcheck/main
-   크롤링
-- AI 집어너서 일정한 형태로 가공
-- 사용자 접속 AI 넣어
-  - 키워드 가져오기
-  - 성향
-  - 중간 ~ 반대 -> 코드를 삽입
+uvicorn app:app --reload
 
 
---- 
-- 목표 : 팩트체크 기사 AI입력 -> 항상 같은 형태의 출력을 받아냄
-- '키워드' : 잘못된 기사의 '키워드'찾고 이거 비교해서 어느정도 내용의 유사성이 있으면 분석
-- 팩트체크 뉴스에서 언급하는 기존 기사의 '잘못된 부분'
-- '그 이유'
-- 프롬프트 잘 입력해서 아무 팩트체크 글을 집어넣도 출력을 ㄱㄴ 하게
-- https://news.naver.com/factcheck/main
+python -m uvicorn src.api.app:app --reload

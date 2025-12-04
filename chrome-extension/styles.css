@@ -1,0 +1,179 @@
+.factcheck-container {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 24px;
+    margin: 30px 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Dotum", sans-serif;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.factcheck-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #f0f0f0;
+}
+
+.factcheck-logo {
+    font-weight: 800;
+    font-size: 1.3em;
+    color: #03c75a; /* Naver Green */
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+}
+
+.factcheck-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #333;
+}
+
+.factcheck-item {
+    margin-bottom: 16px;
+    padding: 16px;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+    border: 1px solid #eee;
+    transition: all 0.2s ease;
+}
+
+.factcheck-item:last-child {
+    margin-bottom: 0;
+}
+
+/* 사실 (True) */
+.factcheck-item.fact {
+    background-color: #f1f8f4;
+    border: 1px solid #cce8d5;
+    border-left: 4px solid #00c73c;
+}
+
+/* 거짓 (Fake) */
+.factcheck-item.fake {
+    background-color: #fff5f5;
+    border: 1px solid #ffc9c9;
+    border-left: 4px solid #ff4b4b;
+}
+
+/* 판단 불가 (Unknown) */
+.factcheck-item.unknown {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-left: 4px solid #adb5bd;
+}
+
+.factcheck-claim {
+    font-weight: 700;
+    font-size: 1.05em;
+    margin-bottom: 8px;
+    color: #212529;
+    line-height: 1.4;
+}
+
+.factcheck-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: 700;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.badge-fact { color: #008a29; background: #dcfce7; }
+.badge-fake { color: #c92a2a; background: #ffe3e3; }
+.badge-unknown { color: #495057; background: #e9ecef; }
+
+.factcheck-reason {
+    font-size: 0.95em;
+    color: #495057;
+    line-height: 1.6;
+}
+
+.factcheck-loading {
+    text-align: center;
+    padding: 30px;
+    color: #868e96;
+    font-size: 0.95em;
+}
+
+.spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(3, 199, 90, 0.3);
+    border-radius: 50%;
+    border-top-color: #03c75a;
+    animation: spin 1s ease-in-out infinite;
+    margin-bottom: 10px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* 자세히 보기 토글 스타일 */
+.factcheck-details-toggle {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 10px;
+    margin-top: 15px;
+    background-color: #f1f3f5;
+    border: none;
+    border-radius: 6px;
+    color: #495057;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.factcheck-details-toggle:hover {
+    background-color: #e9ecef;
+}
+
+.factcheck-details-container {
+    display: none; /* 기본적으로 숨김 */
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px dashed #dee2e6;
+}
+
+.factcheck-details-container.show {
+    display: block;
+}
+
+/* 참고 기사 링크 스타일 */
+.factcheck-references {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0,0,0,0.05);
+    font-size: 0.9em;
+}
+
+.references-title {
+    font-weight: 600;
+    color: #868e96;
+    margin-bottom: 6px;
+    font-size: 0.85em;
+}
+
+.reference-link {
+    display: block;
+    color: #495057;
+    text-decoration: none;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.reference-link:hover {
+    text-decoration: underline;
+    color: #03c75a;
+}
